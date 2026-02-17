@@ -1,0 +1,728 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Crosshair, 
+  Skull, 
+  Shield, 
+  Flame, 
+  Map as MapIcon, 
+  Target, 
+  Trophy, 
+  AlertTriangle, 
+  Clock,
+  Backpack,
+  Activity,
+  Zap,
+  Radio,
+  Wifi,
+  Cpu,
+  Atom,
+  FlaskConical,
+  Calculator,
+  ChevronRight,
+  RotateCcw,
+  LogOut,
+  Plus,
+  Minus,
+  Brain,
+  Terminal,
+  Power
+} from 'lucide-react';
+
+// --- THEME CONFIGURATIONS ---
+const THEMES = {
+  PHYSICS: {
+    id: 'PHYSICS',
+    name: 'ASSAULT (PHYSICS)',
+    color: 'amber',
+    hex: '#f59e0b',
+    icon: Atom,
+    bg: 'bg-amber-950',
+    accent: 'text-amber-500',
+    border: 'border-amber-500/30',
+    glow: 'shadow-amber-500/50'
+  },
+  CHEMISTRY: {
+    id: 'CHEMISTRY',
+    name: 'SUPPORT (CHEM)',
+    color: 'emerald',
+    hex: '#10b981',
+    icon: FlaskConical,
+    bg: 'bg-emerald-950',
+    accent: 'text-emerald-500',
+    border: 'border-emerald-500/30',
+    glow: 'shadow-emerald-500/50'
+  },
+  MATHS: {
+    id: 'MATHS',
+    name: 'RECON (MATHS)',
+    color: 'cyan',
+    hex: '#06b6d4',
+    icon: Calculator,
+    bg: 'bg-cyan-950',
+    accent: 'text-cyan-500',
+    border: 'border-cyan-500/30',
+    glow: 'shadow-cyan-500/50'
+  }
+};
+
+const App = () => {
+  // --- STATE ---
+  const [bootSequence, setBootSequence] = useState(true);
+  const [bootLogs, setBootLogs] = useState([]);
+  const [gameState, setGameState] = useState('lobby'); 
+  const [missionInput, setMissionInput] = useState('');
+  const [videoID, setVideoID] = useState(null);
+  const [isExternalSource, setIsExternalSource] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState(THEMES.PHYSICS);
+  
+  // Stats & Persistence
+  const [totalXP, setTotalXP] = useState(0);
+  const [rankTitle, setRankTitle] = useState('BRONZE V');
+
+  // Drop Phase
+  const [lootTimer, setLootTimer] = useState(0);
+  const [inventory, setInventory] = useState([]);
+  const [redZoneActive, setRedZoneActive] = useState(false);
+  const [notes, setNotes] = useState(''); 
+  const [showNotes, setShowNotes] = useState(false);
+  const [trainingStep, setTrainingStep] = useState(0); 
+  
+  // Fight Phase
+  const [targets, setTargets] = useState(Array(60).fill({ status: 'alive' })); 
+  const [stats, setStats] = useState({ kills: 0, damage: 0 });
+  const [recoil, setRecoil] = useState(false); 
+
+  // Safe Zone
+  const [revisionTimer, setRevisionTimer] = useState(900); 
+  const [isRevisionRunning, setIsRevisionRunning] = useState(false);
+
+  // --- BOOT SEQUENCE LOGIC ---
+  useEffect(() => {
+    const logs = [
+      "INITIALIZING KERNEL...",
+      "LOADING NEURAL MODULES...",
+      "BYPASSING FIREWALLS...",
+      "CONNECTING TO IIT-JEE MAINFRAME...",
+      "FETCHING USER PROFILE...",
+      "OPTIMIZING MEMORY STACK...",
+      "SYSTEM READY."
+    ];
+    
+    let delay = 0;
+    logs.forEach((log, index) => {
+      delay += Math.random() * 500 + 200;
+      setTimeout(() => {
+        setBootLogs(prev => [...prev, log]);
+        if (index === logs.length - 1) {
+          setTimeout(() => setBootSequence(false), 800);
+        }
+      }, delay);
+    });
+  }, []);
+
+  // --- PERSISTENCE ---
+  useEffect(() => {
+    const savedData = localStorage.getItem('360R_ELITE_DATA');
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        setTotalXP(parsed.totalXP || 0);
+        updateRank(parsed.totalXP || 0);
+      } catch (e) {
+        console.error("Data Load Error", e);
+      }
+    }
+  }, []);
+
+  const saveProgress = (xpGain) => {
+    const newXP = totalXP + xpGain;
+    setTotalXP(newXP);
+    updateRank(newXP);
+    localStorage.setItem('360R_ELITE_DATA', JSON.stringify({ totalXP: newXP }));
+  };
+
+  const updateRank = (xp) => {
+    if (xp < 100) setRankTitle('BRONZE V');
+    else if (xp < 500) setRankTitle('SILVER III');
+    else if (xp < 1000) setRankTitle('GOLD II');
+    else if (xp < 2500) setRankTitle('PLATINUM I');
+    else if (xp < 5000) setRankTitle('ACE');
+    else setRankTitle('CONQUEROR');
+  };
+
+  // --- AUDIO ---
+  const speak = (text) => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel(); 
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.1; 
+      utterance.pitch = 0.8; 
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // --- GAMEPLAY FUNCTIONS ---
+  const startMatch = () => {
+    if (!missionInput.trim()) {
+      alert("Missing Objective.");
+      return;
+    }
+    const id = extractVideoID(missionInput);
+    if (id) {
+      setVideoID(id);
+      setIsExternalSource(false);
+      speak("Uplink Established.");
+    } else {
+      setVideoID(null);
+      setIsExternalSource(true);
+      speak("External Ops Authorized.");
+    }
+    setGameState('drop');
+  };
+
+  const extractVideoID = (url) => {
+    if (!url) return null;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  const loadNextModule = () => {
+    setLootTimer(0);
+    speak("Loading next module.");
+  };
+
+  // --- TIMERS ---
+  useEffect(() => {
+    let interval;
+    if (gameState === 'drop') {
+      interval = setInterval(() => {
+        setLootTimer(prev => prev + 1);
+        if ((lootTimer + 1) % 1200 === 0) { 
+          const lootTable = ["Compensator", "Vertical Grip", "4x Scope", "Med Kit", "Level 3 Vest", "AWM", "Ghillie Suit"];
+          const newLoot = lootTable[Math.min(inventory.length, lootTable.length - 1)];
+          setInventory(prev => [...prev, newLoot]);
+          speak(`Supply drop. ${newLoot}.`);
+        }
+      }, 1000);
+
+      const simInterval = setInterval(() => setTrainingStep(prev => (prev + 1) % 4), 3000);
+
+      if (!isExternalSource) {
+        const handleVisibilityChange = () => {
+          if (document.hidden) {
+            setRedZoneActive(true);
+            speak("Red Zone!");
+          } else {
+            setTimeout(() => setRedZoneActive(false), 3000);
+            speak("Safe.");
+          }
+        };
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        return () => {
+          clearInterval(interval);
+          clearInterval(simInterval);
+          document.removeEventListener("visibilitychange", handleVisibilityChange);
+        };
+      }
+      return () => { clearInterval(interval); clearInterval(simInterval); };
+    }
+  }, [gameState, lootTimer, inventory, isExternalSource]);
+
+  useEffect(() => {
+    let interval;
+    if (gameState === 'safezone' && isRevisionRunning && revisionTimer > 0) {
+      interval = setInterval(() => setRevisionTimer(prev => prev - 1), 1000);
+    } else if (gameState === 'safezone' && revisionTimer === 0 && isRevisionRunning) {
+      const xpEarned = (stats.kills * 10) + (inventory.length * 50) + 100;
+      saveProgress(xpEarned);
+      setGameState('victory');
+      speak(`Mission Complete. ${xpEarned} XP.`);
+    }
+    return () => clearInterval(interval);
+  }, [gameState, revisionTimer, isRevisionRunning]);
+
+  const handleTargetClick = (index) => {
+    setRecoil(true);
+    setTimeout(() => setRecoil(false), 100);
+
+    const currentTarget = targets[index];
+    let newStatus = 'alive';
+    let newStats = { ...stats };
+
+    if (currentTarget.status === 'alive') {
+      newStatus = 'headshot';
+      newStats.kills += 1;
+      speak("Hit.");
+    } else if (currentTarget.status === 'headshot') {
+      newStatus = 'ambushed';
+      newStats.kills -= 1;
+      newStats.damage += 1;
+      speak("Ambushed.");
+    } else if (currentTarget.status === 'ambushed') {
+      newStatus = 'revived';
+      speak("Reviving.");
+    } else {
+      newStatus = 'alive'; 
+    }
+
+    const newTargets = [...targets];
+    newTargets[index] = { ...newTargets[index], status: newStatus };
+    setTargets(newTargets);
+    setStats(newStats);
+  };
+
+  // --- RENDER HELPERS ---
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  // --- SCREENS ---
+
+  const renderBootScreen = () => (
+    <div className="w-full h-full bg-black text-green-500 font-mono p-8 flex flex-col justify-end pb-20">
+      {bootLogs.map((log, i) => (
+        <div key={i} className="mb-2 animate-slideIn opacity-80">
+          <span className="mr-2 text-green-700">[{new Date().toLocaleTimeString()}]</span>
+          {log}
+        </div>
+      ))}
+      <div className="w-4 h-6 bg-green-500 animate-pulse mt-2"></div>
+    </div>
+  );
+
+  const renderLobby = () => (
+    <div className="flex flex-col h-full p-6 animate-fadeIn w-full relative overflow-hidden text-slate-200">
+      {/* Dynamic Backgrounds */}
+      <div className={`absolute inset-0 opacity-20 ${currentTheme.bg} z-0`}></div>
+      <div className="absolute inset-0 z-0 cyber-grid opacity-30"></div>
+      
+      {/* Header */}
+      <div className="z-10 flex justify-between items-start mb-8">
+        <div>
+          <h1 className={`text-6xl font-black ${currentTheme.accent} tracking-tighter drop-shadow-lg glitch-text select-none`}>
+            360R: OPERATOR
+          </h1>
+          <div className="flex items-center gap-2 mt-2">
+             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+             <p className="text-slate-500 font-mono text-xs tracking-[0.2em]">SYSTEM ONLINE // v3.0</p>
+          </div>
+        </div>
+        
+        <div className="bg-slate-900/40 border border-white/10 p-4 rounded backdrop-blur-md min-w-[220px]">
+          <div className="text-[10px] text-slate-400 font-mono mb-1 flex justify-between">
+            <span>OPERATOR RANK</span>
+            <Trophy size={12} className={currentTheme.accent}/>
+          </div>
+          <div className={`text-3xl font-black ${currentTheme.accent} tracking-tighter`}>{rankTitle}</div>
+          <div className="w-full bg-slate-800 h-1 mt-2 rounded-full overflow-hidden">
+             <div className={`h-full ${currentTheme.bg.replace('950', '500')} w-1/2`}></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="z-10 flex-1 flex flex-col items-center gap-6 w-full max-w-5xl mx-auto">
+        {/* Class Cards */}
+        <div className="grid grid-cols-3 gap-6 w-full mb-4">
+          {Object.values(THEMES).map((theme) => {
+            const Icon = theme.icon;
+            const isSelected = currentTheme.id === theme.id;
+            return (
+              <button
+                key={theme.id}
+                onClick={() => setCurrentTheme(theme)}
+                className={`
+                  relative p-6 rounded-xl border transition-all duration-300 flex flex-col items-center gap-3 group overflow-hidden
+                  ${isSelected ? `border-${theme.color}-500/50 bg-slate-900/80 shadow-[0_0_30px_rgba(0,0,0,0.5)] scale-105` : 'border-white/5 bg-slate-900/30 hover:bg-slate-800/50'}
+                `}
+              >
+                {isSelected && <div className={`absolute inset-0 bg-${theme.color}-500/10 blur-xl`}></div>}
+                <Icon size={40} className={`relative z-10 transition-colors ${isSelected ? theme.accent : 'text-slate-600 group-hover:text-slate-400'}`} />
+                <span className={`relative z-10 font-black tracking-[0.2em] text-sm ${isSelected ? 'text-white' : 'text-slate-500'}`}>
+                  {theme.name}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Mission Input Panel */}
+        <div className="w-full bg-slate-900/60 border border-white/10 p-8 rounded-2xl backdrop-blur-xl shadow-2xl relative overflow-hidden group">
+          <div className={`absolute top-0 left-0 w-1 h-full bg-${currentTheme.color}-500 transition-all group-hover:w-2`}></div>
+          <div className="flex gap-6 items-center">
+             <div className="flex-1">
+                <label className={`block ${currentTheme.accent} text-xs font-bold mb-2 font-mono tracking-widest flex items-center gap-2`}>
+                  <Terminal size={14} /> ENTER MISSION DIRECTIVE
+                </label>
+                <input 
+                  type="text" 
+                  value={missionInput}
+                  onChange={(e) => setMissionInput(e.target.value)}
+                  placeholder="Paste YouTube Link or Enter Topic Name..."
+                  className="w-full bg-black/50 border border-white/10 text-white p-4 rounded text-lg focus:outline-none focus:border-white/30 font-mono transition-all placeholder:text-slate-700"
+                />
+             </div>
+             <button 
+               onClick={startMatch}
+               className={`h-full px-10 py-4 bg-${currentTheme.color}-600 hover:bg-${currentTheme.color}-500 text-white font-black rounded-lg transition-all hover:scale-105 shadow-lg flex flex-col items-center justify-center gap-1 min-w-[160px]`}
+             >
+               <Power size={24} />
+               <span className="text-xs tracking-widest">INITIATE</span>
+             </button>
+          </div>
+        </div>
+
+        {/* Quick Jump Grid */}
+        <div className="grid grid-cols-3 gap-4 w-full mt-4">
+            {[
+              { label: "FULL LOOT RUN", sub: "Start Session", icon: Backpack, color: "text-emerald-500", action: () => document.querySelector('input').focus() },
+              { label: "INSTANT COMBAT", sub: "Question Bank", icon: Crosshair, color: "text-rose-500", action: () => { speak("Combat initiated."); setGameState('fight'); } },
+              { label: "SAFE ZONE", sub: "Revision Mode", icon: Shield, color: "text-blue-500", action: () => { speak("Entering Safe Zone."); setGameState('safezone'); } }
+            ].map((btn, i) => (
+              <button 
+                key={i}
+                onClick={btn.action}
+                className="p-4 bg-slate-900/40 rounded-lg border border-white/5 hover:bg-slate-800 hover:border-white/20 transition-all group text-left relative overflow-hidden"
+              >
+                <div className={`absolute top-0 right-0 p-3 opacity-20 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300`}>
+                   <btn.icon size={40} className={btn.color} />
+                </div>
+                <h3 className="font-bold text-slate-200 text-lg relative z-10">{btn.label}</h3>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider relative z-10">{btn.sub}</p>
+              </button>
+            ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderDrop = () => (
+    <div className={`flex flex-col h-full w-full relative bg-black overflow-hidden ${redZoneActive ? 'animate-pulse bg-red-900/20' : ''}`}>
+      {/* Screen Effects */}
+      <div className="absolute inset-0 pointer-events-none z-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_2px,3px_100%] opacity-10"></div>
+      
+      {redZoneActive && (
+        <div className="absolute inset-0 flex items-center justify-center z-[60] bg-red-500/10 backdrop-blur-sm">
+          <div className="bg-red-600 text-white font-black text-6xl px-12 py-8 border-y-8 border-black animate-bounce">
+            ⚠ RED ZONE ACTIVE ⚠
+          </div>
+        </div>
+      )}
+      
+      {/* Top HUD */}
+      <div className="bg-slate-900/80 backdrop-blur-md border-b border-white/10 p-3 flex justify-between items-center text-white font-mono shrink-0 z-40 relative">
+        <div className="flex items-center gap-6">
+          <button onClick={() => { if (confirm("Abort?")) setGameState('lobby'); }} className="text-rose-500 hover:text-white transition-colors"><LogOut size={16}/></button>
+          
+          <div className="flex flex-col">
+             <span className="text-[10px] text-slate-500 tracking-widest">MISSION TIMER</span>
+             <span className={`text-xl font-bold ${currentTheme.accent}`}>{formatTime(lootTimer)}</span>
+          </div>
+          
+          <div className="h-8 w-px bg-white/10"></div>
+          
+          <div className="flex flex-col">
+             <span className="text-[10px] text-slate-500 tracking-widest">NEXT DROP</span>
+             <span className="text-white">{formatTime(1200 - (lootTimer % 1200))}</span>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+           <button onClick={loadNextModule} className="px-4 py-2 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 flex items-center gap-2 transition-all">
+            <RotateCcw size={14} /> RESET TIMER
+           </button>
+           <button onClick={() => { speak("Combat ready."); setGameState('fight'); }} className={`px-6 py-2 rounded bg-${currentTheme.color}-600 hover:bg-${currentTheme.color}-500 text-xs font-black text-white flex items-center gap-2 transition-all hover:scale-105 shadow-[0_0_15px_rgba(0,0,0,0.5)]`}>
+            ENGAGE <ChevronRight size={14} />
+           </button>
+        </div>
+      </div>
+
+      <div className="flex-1 flex overflow-hidden relative z-10">
+        <div className="flex-1 bg-black relative flex items-center justify-center">
+          {!isExternalSource && videoID ? (
+            <iframe 
+              width="100%" height="100%" 
+              src={`https://www.youtube.com/embed/${videoID}?autoplay=1`} 
+              frameBorder="0" allow="autoplay; encrypted-media" allowFullScreen
+              className="z-10 w-full h-full"
+            ></iframe>
+          ) : (
+            // EXT OPS: VISUALIZER
+            <div className="w-full h-full flex flex-col items-center justify-center relative bg-slate-950 p-12">
+               <div className={`absolute inset-0 opacity-5 bg-[radial-gradient(${currentTheme.hex}_1px,transparent_1px)] bg-[size:30px_30px]`}></div>
+               
+               <div className="w-full max-w-5xl flex gap-12 items-center">
+                 {/* Simulation Panel */}
+                 <div className="flex-1 bg-slate-900/30 border border-white/5 p-8 rounded-2xl backdrop-blur-sm relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-white to-transparent opacity-20 animate-scan"></div>
+                    
+                    <div className="flex items-center gap-4 mb-8">
+                        <div className={`p-4 rounded-xl bg-slate-800 ${currentTheme.accent} shadow-lg`}>
+                          <Brain size={32} />
+                        </div>
+                        <div>
+                          <div className="text-white font-bold font-mono text-xl tracking-widest">NEURAL LINK</div>
+                          <div className={`text-xs font-mono ${currentTheme.accent} animate-pulse`}>● DATA STREAM ACTIVE</div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {["ANALYZING CONCEPTS", "ENCODING MEMORY", "PATTERN MATCHING", "OPTIMIZING SYNAPSES"].map((txt, i) => (
+                        <div key={i} className="flex items-center justify-between text-xs font-mono p-2 border-b border-white/5">
+                           <span className={trainingStep === i ? 'text-white' : 'text-slate-600'}>{txt}</span>
+                           <div className="flex gap-1">
+                              {[1,2,3,4,5].map(bar => (
+                                <div key={bar} className={`w-1 h-3 rounded-full ${trainingStep === i ? `bg-${currentTheme.color}-500 animate-bounce` : 'bg-slate-800'}`} style={{animationDelay: `${bar * 0.1}s`}}></div>
+                              ))}
+                           </div>
+                        </div>
+                      ))}
+                    </div>
+                 </div>
+
+                 {/* Central Focus Orb */}
+                 <div className="relative w-72 h-72 flex items-center justify-center">
+                    <div className={`absolute inset-0 rounded-full border border-${currentTheme.color}-500/20 animate-[spin_10s_linear_infinite]`}></div>
+                    <div className={`absolute inset-4 rounded-full border-t-2 border-${currentTheme.color}-500/50 animate-[spin_3s_linear_infinite_reverse]`}></div>
+                    <div className={`absolute inset-0 rounded-full bg-${currentTheme.color}-500/5 blur-3xl animate-pulse`}></div>
+                    
+                    <div className="z-10 text-center">
+                       <div className="text-6xl font-black text-white font-mono tabular-nums tracking-tighter">{formatTime(lootTimer)}</div>
+                       <div className={`text-xs tracking-[0.5em] ${currentTheme.accent} mt-2`}>FOCUSED</div>
+                    </div>
+                 </div>
+               </div>
+               
+               <div className="mt-12 text-slate-500 font-mono text-xs text-center max-w-lg">
+                 CURRENT OBJECTIVE: <span className="text-white">{missionInput}</span>
+               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Notes / Inventory Panel */}
+        <div className="w-80 bg-slate-900 border-l border-white/10 flex flex-col shrink-0 z-20">
+           <div className="flex">
+             {['INVENTORY', 'FIELD NOTES'].map((tab, i) => (
+               <button 
+                key={tab} 
+                onClick={() => setShowNotes(i === 1)} 
+                className={`flex-1 py-4 text-[10px] font-bold tracking-widest ${
+                  (i === 1) === showNotes ? `bg-slate-800 text-white border-b-2 border-${currentTheme.color}-500` : 'text-slate-500 hover:bg-slate-800/50'
+                }`}
+               >
+                 {tab}
+               </button>
+             ))}
+           </div>
+
+           <div className="flex-1 overflow-hidden relative bg-slate-950">
+             {showNotes ? (
+               <textarea 
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="> LOG ENTRY..."
+                  className={`w-full h-full bg-transparent text-slate-300 p-4 text-xs font-mono focus:outline-none resize-none leading-relaxed`}
+               />
+             ) : (
+               <div className="h-full overflow-y-auto p-4 space-y-3">
+                 {inventory.length === 0 && (
+                    <div className="text-center mt-10 opacity-30">
+                      <Backpack size={40} className="mx-auto mb-2" />
+                      <p className="text-[10px] font-mono">NO ASSETS ACQUIRED</p>
+                    </div>
+                 )}
+                 {inventory.map((item, idx) => (
+                   <div key={idx} className={`bg-slate-900 p-3 rounded border border-white/5 flex items-center gap-3 animate-slideIn hover:border-${currentTheme.color}-500/50 transition-colors`}>
+                     <div className={`w-8 h-8 rounded flex items-center justify-center bg-slate-800 ${currentTheme.accent}`}>
+                       <Trophy size={14} />
+                     </div>
+                     <span className="text-xs text-slate-300 font-mono font-bold">{item}</span>
+                   </div>
+                 ))}
+               </div>
+             )}
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderFight = () => (
+    <div className={`flex flex-col h-full w-full bg-slate-950 relative overflow-hidden transition-transform duration-75 ${recoil ? 'translate-y-1 scale-[1.005]' : ''}`}>
+      <div className={`absolute inset-0 opacity-10 bg-[radial-gradient(${currentTheme.hex}_1px,transparent_1px)] bg-[size:40px_40px]`}></div>
+
+      <div className="bg-slate-900/80 backdrop-blur-md border-b border-white/10 p-4 shrink-0 z-20 flex justify-between items-center shadow-2xl relative">
+         <div className="flex items-center gap-6">
+            <button onClick={() => { if(confirm("Retreat?")) setGameState('lobby'); }} className="text-slate-500 hover:text-white"><LogOut size={20}/></button>
+            <div className="flex items-center gap-12">
+              <div>
+                <span className={`block text-[10px] font-bold tracking-widest ${currentTheme.accent} mb-1`}>CONFIRMED KILLS</span>
+                <span className="text-5xl font-black text-white leading-none tracking-tighter">{stats.kills}</span>
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold tracking-widest text-rose-500 mb-1">DAMAGE TAKEN</span>
+                <span className="text-5xl font-black text-white leading-none tracking-tighter">{stats.damage}</span>
+              </div>
+            </div>
+         </div>
+         
+         <div className="flex items-center gap-6">
+            <div className="text-right">
+               <div className="text-[10px] text-slate-500 font-mono tracking-widest">HOSTILES REMAINING</div>
+               <div className="text-2xl font-bold text-white">{targets.filter(t => t.status === 'alive').length} / 60</div>
+            </div>
+            <button 
+              onClick={() => {
+                if (stats.kills + stats.damage < 10 && !confirm("Zone still hot. Retreat?")) return;
+                setIsRevisionRunning(false); 
+                setGameState('safezone');
+              }}
+              className={`px-8 py-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold flex items-center gap-3 transition-all hover:scale-105`}
+            >
+              <Shield size={20} className="text-blue-500" /> RTB (SAFE ZONE)
+            </button>
+         </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-8 z-10 custom-scrollbar">
+        <div className="max-w-[1400px] mx-auto grid grid-cols-6 md:grid-cols-10 gap-3">
+           {targets.map((target, idx) => {
+             let statusStyle = "bg-slate-900/50 border-white/5 text-slate-600 hover:bg-slate-800 hover:border-white/20"; 
+             let icon = <Target size={24} />;
+             
+             if (target.status === 'headshot') {
+               statusStyle = `bg-${currentTheme.color}-500/20 border-${currentTheme.color}-500 ${currentTheme.accent} shadow-[0_0_15px_rgba(0,0,0,0.5)]`;
+               icon = <Skull size={24} className="animate-bounce" />;
+             } else if (target.status === 'ambushed') {
+               statusStyle = "bg-rose-500/20 border-rose-500 text-rose-500 shadow-[0_0_15px_rgba(220,38,38,0.3)]";
+               icon = <AlertTriangle size={24} className="animate-pulse" />;
+             } else if (target.status === 'revived') {
+               statusStyle = "bg-blue-500/20 border-blue-500 text-blue-400";
+               icon = <Activity size={24} />;
+             }
+
+             return (
+               <button
+                 key={idx}
+                 onClick={() => handleTargetClick(idx)}
+                 className={`aspect-square rounded-xl border-2 relative flex flex-col items-center justify-center transition-all duration-200 ${statusStyle}`}
+               >
+                 <span className="absolute top-2 left-3 text-[10px] font-mono opacity-40">#{idx + 1}</span>
+                 {icon}
+               </button>
+             );
+           })}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderSafeZone = () => (
+    <div className="h-full flex flex-col items-center justify-center bg-black relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-t from-orange-900/20 via-black to-black z-0"></div>
+      
+      <div className="z-10 text-center space-y-8 animate-fadeIn max-w-2xl px-6 w-full relative">
+        <div className="relative inline-block">
+           <div className="absolute inset-0 bg-orange-500 blur-3xl opacity-20 animate-pulse"></div>
+           <Flame size={100} className="text-orange-500 relative z-10 drop-shadow-[0_0_15px_rgba(249,115,22,0.8)]" />
+        </div>
+        
+        <div>
+           <h2 className="text-5xl font-black text-white tracking-tighter mb-2">SAFE ZONE</h2>
+           <p className="text-orange-200/50 font-mono tracking-widest text-sm">REPAIRING ARMOR... CONSOLIDATING DATA...</p>
+        </div>
+
+        <div className="py-8 flex flex-col items-center gap-6 bg-white/5 rounded-3xl border border-white/5 backdrop-blur-md">
+          <div className="text-9xl font-black text-white font-mono tracking-tighter tabular-nums">
+            {formatTime(revisionTimer)}
+          </div>
+          
+          {!isRevisionRunning && (
+            <div className="flex gap-8 items-center">
+              <button onClick={() => adjustRevisionTime(-300)} className="p-4 bg-black/50 rounded-full hover:bg-white/10 text-slate-300 transition-colors"><Minus size={24}/></button>
+              <span className="text-slate-500 font-mono text-sm tracking-widest">ADJUST DURATION</span>
+              <button onClick={() => adjustRevisionTime(300)} className="p-4 bg-black/50 rounded-full hover:bg-white/10 text-slate-300 transition-colors"><Plus size={24}/></button>
+            </div>
+          )}
+        </div>
+
+        <button 
+          onClick={() => setIsRevisionRunning(!isRevisionRunning)}
+          className={`w-full py-6 rounded-xl font-black text-2xl tracking-[0.2em] shadow-2xl transition-all hover:scale-[1.02] ${isRevisionRunning ? 'bg-slate-800 text-slate-500' : 'bg-orange-600 text-white hover:bg-orange-500'}`}
+        >
+          {isRevisionRunning ? 'PAUSE SEQUENCE' : 'INITIATE REPAIR'}
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderVictory = () => (
+    <div className="h-full flex flex-col items-center justify-center bg-black text-center p-8 relative overflow-hidden">
+      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+      
+      <div className="z-10 bg-slate-900/90 border border-white/10 p-16 rounded-3xl shadow-2xl backdrop-blur-md max-w-3xl w-full relative">
+        <div className={`absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-${currentTheme.color}-500 via-white to-${currentTheme.color}-500`}></div>
+        
+        <Trophy size={80} className="text-yellow-400 mx-auto mb-8 drop-shadow-[0_0_30px_rgba(250,204,21,0.6)]" />
+        
+        <h1 className="text-6xl font-black text-white mb-2 tracking-tighter">MISSION COMPLETE</h1>
+        <p className={`text-xl font-bold ${currentTheme.accent} font-mono mb-12 tracking-widest`}>
+          RANK PROGRESS SAVED: {rankTitle}
+        </p>
+
+        <div className="grid grid-cols-3 gap-px bg-white/10 rounded-xl overflow-hidden mb-12 border border-white/10">
+           {[
+             { label: "HEADSHOTS", val: stats.kills },
+             { label: "TIME", val: formatTime(lootTimer) },
+             { label: "LOOT", val: inventory.length }
+           ].map((stat, i) => (
+             <div key={i} className="bg-slate-900/80 p-6">
+                <div className="text-slate-500 text-[10px] tracking-widest mb-2">{stat.label}</div>
+                <div className="text-white font-black text-3xl">{stat.val}</div>
+             </div>
+           ))}
+        </div>
+
+        <button 
+          onClick={() => window.location.reload()}
+          className={`w-full bg-white text-black hover:bg-slate-200 font-black py-6 rounded-xl text-xl tracking-widest transition-all transform hover:scale-[1.01] shadow-2xl`}
+        >
+          RETURN TO BASE
+        </button>
+      </div>
+    </div>
+  );
+
+  if (bootSequence) return renderBootScreen();
+
+  return (
+    <div className="w-full h-screen bg-black text-slate-200 overflow-hidden select-none font-sans relative">
+       <style>{`
+         .glitch-text { text-shadow: 2px 0 #fff, -2px 0 ${currentTheme.hex}; }
+         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+         .custom-scrollbar::-webkit-scrollbar-track { background: #000; }
+         .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+         .cyber-grid {
+            background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+            animation: gridMove 20s linear infinite;
+         }
+         @keyframes gridMove { from { transform: translateY(0); } to { transform: translateY(40px); } }
+         @keyframes scan { 0% { top: 0; } 100% { top: 100%; } }
+         .animate-scan { animation: scan 3s linear infinite; }
+       `}</style>
+
+      {gameState === 'lobby' && renderLobby()}
+      {gameState === 'drop' && renderDrop()}
+      {gameState === 'fight' && renderFight()}
+      {gameState === 'safezone' && renderSafeZone()}
+      {gameState === 'victory' && renderVictory()}
+    </div>
+  );
+};
+
+export default App;
